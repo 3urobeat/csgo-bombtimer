@@ -7,21 +7,22 @@ import pyscreenshot as ImageGrab # use pyscreenshot instead of PIL for Linux sup
 from PIL import ImageTk, Image
 
 # Stuff you can customize
-debugmode = True
-checkdelay = 0.1
+debugmode = True # True displays image processing in window
+checkdelay = 0.1 # Time in seconds the
 c4time = 40
 miniscoreboard_position = "top" # not implemented yet
 imagegrabwidth = 150 # How wide the image cut the script checks will be from left to right
 
-redmask_threshold1 = [110,60,0]
-redmask_threshold2 = [145,255,255]
+redmask_threshold1 = [114,60,20] # lower threshold for the color mask
+redmask_threshold2 = [140,255,255] # upper threshold for the color mask
+blurintensity = (5,5) # intensity of the image blurring
 edgedetect_threshold1 = 300
 edgedetect_threshold2 = 450
-histogram_threshold1 = 430
+histogram_threshold1 = 420
 histogram_threshold2 = 520
 # End
 
-version = "0.1"
+version = "0.2"
 
 print(f"\nCSGO-Bombtimer v{version} by 3urobeat")
 print("---------------------------\n")
@@ -30,6 +31,7 @@ print("You can go into the bombtimer.py file to customize values or enable debug
 
 counterstarted = False
 countdowntime = c4time
+notdetectedcount = 0
 
 # Get images the cut will be compared to
 matchimage = cv2.imread("bomb.jpg", 0)
@@ -118,23 +120,32 @@ def analyseImage(img):
     
     global counterstarted
     global countdowntime
+    global notdetectedcount
     
     if c1 > histogram_threshold1 and c1 < histogram_threshold2:
+        notdetectedcount = 0
+        
         if not counterstarted:
             counterstarted = True
             
             countdown()
             timerdetectedlabel.configure(text="Bomb detected!", fg='#ff1944')
     else:
-        if counterstarted: # change stuff only once
-            countdowntime = c4time
-            timerdetectedlabel.configure(text="No Bomb detected.", fg='#32CD32')
-            timerlabel.configure(text = countdowntime)
-            
-        counterstarted = False
+        if notdetectedcount > 3: # only trigger a reset after 3 wrong values
+            if counterstarted: # change stuff only once
+                countdowntime = c4time
+                timerdetectedlabel.configure(text="No Bomb detected.", fg='#32CD32')
+                timerlabel.configure(text = countdowntime)
+                
+            counterstarted = False
+        else:
+            notdetectedcount = notdetectedcount + 1
     
 def processImage(img):
     image = np.array(img)
+    
+    # Brighten image
+    image = cv2.add(image, np.array([50.0])) 
     
     # Apply red & green mask
     result = image.copy() # Thanks: https://stackoverflow.com/a/58194879/12934162
@@ -143,11 +154,14 @@ def processImage(img):
     mask = cv2.inRange(image, np.array(redmask_threshold1), np.array(redmask_threshold2)) # red
     result = cv2.bitwise_and(result, result, mask=mask)
     
+    # Blur image
+    blurred = cv2.GaussianBlur(result, blurintensity, 0)
+    
     # Outline objects
-    outlinedimg = cv2.Canny(result, edgedetect_threshold1, edgedetect_threshold2)
+    outlinedimg = cv2.Canny(blurred, edgedetect_threshold1, edgedetect_threshold2)
        
     analyseImage(outlinedimg)
-    refreshWindow(img, result, outlinedimg)
+    refreshWindow(img, blurred, outlinedimg)
 
 def grabImage():
     width = get_monitors()[0].width # get current width and height
